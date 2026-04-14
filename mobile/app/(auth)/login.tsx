@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { Colors } from '../../constants/colors'
+import Ionicons from '@expo/vector-icons/Ionicons'
 
 const MAX_ATTEMPTS = 5
 const BLOCK_MINUTES = 15
@@ -13,6 +14,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const [attempts, setAttempts] = useState(0)
   const [blockedUntil, setBlockedUntil] = useState<Date | null>(null)
   const [countdown, setCountdown] = useState(0)
@@ -68,7 +70,7 @@ export default function LoginScreen() {
       .from('pets')
       .select('id')
       .eq('user_id', data.user.id)
-      .single()
+      .maybeSingle()
 
     router.replace(pet ? '/(tabs)' : '/onboarding/pet-setup')
   }
@@ -114,14 +116,27 @@ export default function LoginScreen() {
         editable={!isBlocked || isBlocked === null}
         autoComplete="email"
       />
-      <TextInput
-        style={styles.input}
-        placeholder="Contraseña"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        editable={!isBlocked}
-      />
+      <View style={styles.passwordContainer}>
+        <TextInput
+          style={styles.passwordInput}
+          placeholder="Contraseña"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry={!showPassword}
+          editable={!isBlocked}
+        />
+        <TouchableOpacity 
+          style={styles.eyeButton} 
+          onPress={() => setShowPassword(!showPassword)}
+          disabled={isBlocked}
+        >
+          {showPassword ? (
+            <Ionicons name="eye-off" size={20} color={Colors.textSecondary} />
+          ) : (
+            <Ionicons name="eye" size={20} color={Colors.textSecondary} />
+          )}
+        </TouchableOpacity>
+      </View>
 
       <TouchableOpacity
         style={[styles.button, (loading || isBlocked) && styles.buttonDisabled]}
@@ -180,6 +195,24 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     fontSize: 16,
     backgroundColor: Colors.white,
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 16,
+    marginBottom: 16,
+    backgroundColor: Colors.white,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 16,
+    fontSize: 16,
+  },
+  eyeButton: {
+    padding: 16,
+    marginRight: 4,
   },
   button: {
     backgroundColor: Colors.primary,

@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, Alert } from 'react-native'
 import { router } from 'expo-router'
 import { useAuthStore } from '../../stores/authStore'
 import { usePetStore } from '../../stores/petStore'
 import { Colors, PetEmojis } from '../../constants/colors'
+import { supabase } from '../../lib/supabase'
 
 const SPECIES_LIST = [
   { key: 'perro', emoji: '🐕', label: 'Perro' },
@@ -24,6 +25,18 @@ export default function PetSetupScreen() {
   const [petName, setPetName] = useState('')
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    // Verificar si ya tiene mascota y redirigir si es así
+    if (user) {
+      supabase.from('pets').select('id').eq('user_id', user.id).maybeSingle()
+        .then(({ data: pet }) => {
+          if (pet) {
+            router.replace('/(tabs)')
+          }
+        })
+    }
+  }, [user])
+
   const handleAdopt = async () => {
     if (!user) return
     
@@ -39,10 +52,13 @@ export default function PetSetupScreen() {
 
     setLoading(true)
     try {
+      console.log('📝 [pet-setup] Creando mascota:', { userId: user.id, name: petName, species: selectedSpecies })
       await createPet(user.id, petName.trim(), selectedSpecies)
+      console.log('✅ [pet-setup] Mascota creada exitosamente')
       router.replace('/(tabs)')
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo crear la mascota')
+    } catch (error: any) {
+      console.error('❌ [pet-setup] Error:', error)
+      Alert.alert('Error', error?.message || 'No se pudo crear la mascota')
     } finally {
       setLoading(false)
     }

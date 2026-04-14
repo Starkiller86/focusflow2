@@ -1,51 +1,92 @@
 import { useState } from 'react'
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView } from 'react-native'
 import { router } from 'expo-router'
-import { useForm } from 'react-hook-form'
-import { z } from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { Colors } from '../../constants/colors'
+import Ionicons from '@expo/vector-icons/Ionicons'
 import PrivacyModal from '../../components/ui/PrivacyModal'
 
-const schema = z.object({
-  name: z.string().min(2, 'Nombre requerido (mínimo 2 caracteres)'),
-  email: z.string().email('Correo electrónico inválido'),
-  password: z.string()
-    .min(8, 'Mínimo 8 caracteres')
-    .regex(/[A-Z]/, 'Debe tener al menos una mayúscula')
-    .regex(/[a-z]/, 'Debe tener al menos una minúscula')
-    .regex(/[0-9]/, 'Debe tener al menos un número'),
-  confirmPassword: z.string(),
-  acceptedTerms: z.boolean().refine(val => val === true, {
-    message: 'Debes aceptar los términos y condiciones',
-  }),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: 'Las contraseñas no coinciden',
-  path: ['confirmPassword'],
-})
-
-type FormData = z.infer<typeof schema>
+interface FormErrors {
+  name?: string
+  email?: string
+  password?: string
+  confirmPassword?: string
+}
 
 export default function RegisterScreen() {
   const [loading, setLoading] = useState(false)
   const [showPrivacy, setShowPrivacy] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [acceptedTermsChecked, setAcceptedTermsChecked] = useState(false)
+  const [errors, setErrors] = useState<FormErrors>({})
   const setUser = useAuthStore((s) => s.setUser)
   
-  const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    defaultValues: { acceptedTerms: undefined },
-  })
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
 
-  const onSubmit = async (data: FormData) => {
+  const validateForm = (): boolean => {
+    console.log('🔍 Validando...')
+    const newErrors: FormErrors = {}
+    
+    if (!name || name.trim().length < 2) {
+      console.log('❌ Error nombre: muy corto')
+      newErrors.name = 'El nombre debe tener al menos 2 caracteres'
+    }
+    
+    if (!email || !email.includes('@')) {
+      console.log('❌ Error email: inválido')
+      newErrors.email = 'Ingresa un correo electrónico válido'
+    }
+    
+    if (!password || password.length < 8) {
+      console.log('❌ Error password: muy corta')
+      newErrors.password = 'La contraseña debe tener al menos 8 caracteres'
+    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+      console.log('❌ Error password: falta mayúscula/minúscula/número')
+      newErrors.password = 'La contraseña debe tener mayúscula, minúscula y número'
+    }
+    
+    if (!confirmPassword || confirmPassword !== password) {
+      console.log('❌ Error confirmPassword: no coincide')
+      newErrors.confirmPassword = 'Las contraseñas no coinciden'
+    }
+    
+    console.log('📋 Errores encontrados:', newErrors)
+    
+    setErrors(newErrors)
+    const isValid = Object.keys(newErrors).length === 0
+    console.log('✅ ¿Formulario válido?:', isValid)
+    return isValid
+  }
+
+  const handleRegister = async () => {
     if (loading) return
+    
+    console.log('📋 Datos:', { name, email, password, confirmPassword })
+    
+    if (!validateForm()) {
+      console.log('❌ Errores de validación:', errors)
+      return
+    }
+
+    if (!acceptedTermsChecked) {
+      Alert.alert('Términos requeridos', 'Debes aceptar los términos y condiciones')
+      return
+    }
+
+    console.log('📡 Enviando a Supabase...')
     setLoading(true)
 
     const { data: authData, error } = await supabase.auth.signUp({
-      email: data.email,
-      password: data.password,
+      email,
+      password,
     })
+
+    console.log('📡 Respuesta Supabase:', authData, error)
 
     if (error) {
       setLoading(false)
@@ -57,7 +98,7 @@ export default function RegisterScreen() {
       return
     }
 
-    if (!authData.user) {
+    if (!authData?.user) {
       setLoading(false)
       Alert.alert('Error', 'No se pudo crear el usuario')
       return
@@ -65,8 +106,8 @@ export default function RegisterScreen() {
 
     const { error: insertError } = await supabase.from('users').insert({
       id: authData.user.id,
-      name: data.name,
-      email: data.email,
+      name,
+      email,
       role: 'paciente',
     })
 
@@ -99,8 +140,6 @@ export default function RegisterScreen() {
     )
   }
 
-  const password = watch('password')
-
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Crear Cuenta</Text>
@@ -112,10 +151,11 @@ export default function RegisterScreen() {
           <TextInput
             style={styles.input}
             placeholder="Tu nombre"
-            {...register('name')}
+            value={name}
+            onChangeText={setName}
             autoCapitalize="words"
           />
-          {errors.name && <Text style={styles.error}>{errors.name.message}</Text>}
+          {errors.name && <Text style={styles.error}>{errors.name}</Text>}
         </View>
 
         <View>
@@ -123,33 +163,60 @@ export default function RegisterScreen() {
           <TextInput
             style={styles.input}
             placeholder="correo@ejemplo.com"
-            {...register('email')}
+            value={email}
+            onChangeText={setEmail}
             keyboardType="email-address"
             autoCapitalize="none"
           />
-          {errors.email && <Text style={styles.error}>{errors.email.message}</Text>}
+          {errors.email && <Text style={styles.error}>{errors.email}</Text>}
         </View>
 
         <View>
           <Text style={styles.label}>Contraseña</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="••••••••"
-            {...register('password')}
-            secureTextEntry
-          />
-          {errors.password && <Text style={styles.error}>{errors.password.message}</Text>}
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="••••••••"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+            />
+            <TouchableOpacity 
+              style={styles.eyeButton} 
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? (
+                <Ionicons name="eye-off" size={20} color={Colors.textSecondary} />
+              ) : (
+                <Ionicons name="eye" size={20} color={Colors.textSecondary} />
+              )}
+            </TouchableOpacity>
+          </View>
+          {errors.password && <Text style={styles.error}>{errors.password}</Text>}
         </View>
 
         <View>
           <Text style={styles.label}>Confirmar contraseña</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="••••••••"
-            {...register('confirmPassword')}
-            secureTextEntry
-          />
-          {errors.confirmPassword && <Text style={styles.error}>{errors.confirmPassword.message}</Text>}
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="••••••••"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry={!showConfirmPassword}
+            />
+            <TouchableOpacity 
+              style={styles.eyeButton} 
+              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+            >
+              {showConfirmPassword ? (
+                <Ionicons name="eye-off" size={20} color={Colors.textSecondary} />
+              ) : (
+                <Ionicons name="eye" size={20} color={Colors.textSecondary} />
+              )}
+            </TouchableOpacity>
+          </View>
+          {errors.confirmPassword && <Text style={styles.error}>{errors.confirmPassword}</Text>}
         </View>
 
         <TouchableOpacity
@@ -161,20 +228,24 @@ export default function RegisterScreen() {
 
         <TouchableOpacity
           style={styles.checkboxRow}
-          onPress={() => setValue('acceptedTerms', watch('acceptedTerms') ? undefined : true as any)}
+          onPress={() => setAcceptedTermsChecked(!acceptedTermsChecked)}
         >
-          <View style={[styles.checkbox, watch('acceptedTerms') && styles.checkboxChecked]}>
-            {watch('acceptedTerms') && <Text style={styles.checkmark}>✓</Text>}
+          <View style={[styles.checkbox, acceptedTermsChecked && styles.checkboxChecked]}>
+            {acceptedTermsChecked && <Text style={styles.checkmark}>✓</Text>}
           </View>
           <Text style={styles.checkboxLabel}>
             Acepto los Términos y Condiciones y el Aviso de Privacidad
           </Text>
         </TouchableOpacity>
-        {errors.acceptedTerms && <Text style={styles.error}>{errors.acceptedTerms.message}</Text>}
 
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleSubmit(onSubmit)}
+          onPress={() => {
+            console.log('🔘 Botón presionado')
+            console.log('📝 name:', name, '| email:', email, '| password:', password, '| confirm:', confirmPassword)
+            console.log('📝 acceptedTermsChecked:', acceptedTermsChecked)
+            handleRegister()
+          }}
           disabled={loading}
         >
           <Text style={styles.buttonText}>
@@ -230,6 +301,23 @@ const styles = StyleSheet.create({
     padding: 16,
     fontSize: 16,
     backgroundColor: Colors.white,
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 16,
+    backgroundColor: Colors.white,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 16,
+    fontSize: 16,
+  },
+  eyeButton: {
+    padding: 16,
+    marginRight: 4,
   },
   error: {
     color: Colors.error,

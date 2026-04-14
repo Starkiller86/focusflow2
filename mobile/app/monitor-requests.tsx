@@ -30,11 +30,20 @@ export default function MonitorRequestsScreen() {
   const fetchRequests = async () => {
     if (!user) return
     setLoading(true)
-    const { data } = await supabase
+    console.log('📝 [monitor-requests] Fetching para user:', user.id)
+    
+    const { data, error } = await supabase
       .from('monitor_requests')
       .select('*')
       .eq('patient_id', user.id)
+      .eq('status', 'pending')
       .order('created_at', { ascending: false })
+    
+    if (error) {
+      console.error('❌ [monitor-requests] Error:', error)
+    }
+    
+    console.log('📋 [monitor-requests] Solicitudes encontradas:', data?.length || 0)
     setRequests(data || [])
     setLoading(false)
   }
@@ -48,15 +57,48 @@ export default function MonitorRequestsScreen() {
         {
           text: 'Aceptar',
           onPress: async () => {
-            await supabase.from('monitor_requests')
-              .update({ status: 'accepted', responded_at: new Date().toISOString() })
-              .eq('id', request.id)
+            console.log('📝 [monitor-requests] Aceptando solicitud:', request)
+            
+            try {
+              // Step 1: Update request status
+              console.log('📝 [monitor-requests] Actualizando status a accepted...')
+              const { error: updateError } = await supabase
+                .from('monitor_requests')
+                .update({ status: 'accepted', responded_at: new Date().toISOString() })
+                .eq('id', request.id)
 
-            await supabase.from('monitor_patient')
-              .insert({ monitor_id: request.monitor_id, patient_id: request.patient_id })
+              if (updateError) {
+                console.error('❌ [monitor-requests] Error al actualizar:', updateError)
+                Alert.alert('Error', 'No se pudo aceptar la solicitud')
+                return
+              }
+              
+              console.log('✅ [monitor-requests] Status actualizado')
 
-            await fetchRequests()
-            Alert.alert('Éxito', 'Ahora Puedes ser monitoreado')
+              // Step 2: Insert into monitor_patient
+              console.log('📝 [monitor-requests] Insertando en monitor_patient:', {
+                monitor_id: request.monitor_id,
+                patient_id: request.patient_id
+              })
+              
+              const { error: insertError } = await supabase
+                .from('monitor_patient')
+                .insert({ monitor_id: request.monitor_id, patient_id: request.patient_id })
+
+              if (insertError) {
+                console.error('❌ [monitor-requests] Error al insertar en monitor_patient:', insertError)
+                Alert.alert('Error', 'No se pudo crear la relación de monitoreo')
+                return
+              }
+              
+              console.log('✅ [monitor-requests] Relación de monitoreo creada')
+
+              await fetchRequests()
+              Alert.alert('Éxito', 'Ahora puedes ser monitoreado por ' + request.monitor_name)
+            } catch (err) {
+              console.error('❌ [monitor-requests] Error inesperado:', err)
+              Alert.alert('Error', 'Ocurrió un error inesperado')
+            }
           },
         },
       ]
@@ -73,14 +115,30 @@ export default function MonitorRequestsScreen() {
           text: 'Rechazar',
           style: 'destructive',
           onPress: async () => {
-            await supabase.from('monitor_requests')
-              .update({ status: 'rejected', responded_at: new Date().toISOString() })
-              .eq('id', request.id)
+            console.log('📝 [monitor-requests] Rechazando solicitud:', request)
+            
+            try {
+              const { error: updateError } = await supabase
+                .from('monitor_requests')
+                .update({ status: 'rejected', responded_at: new Date().toISOString() })
+                .eq('id', request.id)
 
-            await supabase.from('request_cooldowns')
-              .insert({ patient_id: request.patient_id, monitor_id: request.monitor_id })
+              if (updateError) {
+                console.error('❌ [monitor-requests] Error al rechazar:', updateError)
+                Alert.alert('Error', 'No se pudo rechazar la solicitud')
+                return
+              }
 
-            await fetchRequests()
+              if (cooldownError) {
+                console.error('❌ [monitor-requests] Error al crear cooldown:', cooldownError)
+              }
+
+              console.log('✅ [monitor-requests] Solicitud rechazada')
+              await fetchRequests()
+            } catch (err) {
+              console.error('❌ [monitor-requests] Error inesperado al rechazar:', err)
+              Alert.alert('Error', 'Ocurrió un error inesperado')
+            }
           },
         },
       ]

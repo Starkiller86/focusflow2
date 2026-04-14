@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal, Platform } from 'react-native'
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal, Platform, Pressable } from 'react-native'
 import { router } from 'expo-router'
 import { useAuthStore } from '../../stores/authStore'
 import { useTaskStore } from '../../stores/taskStore'
 import { Colors } from '../../constants/colors'
 import { suggestSubtasks } from '../../lib/nlpSubtasks'
+import { Calendar } from 'react-native-calendars'
 
 export default function NewTaskScreen() {
   const { user } = useAuthStore()
@@ -18,6 +19,8 @@ export default function NewTaskScreen() {
   const [loading, setLoading] = useState(false)
   const [showSubtasks, setShowSubtasks] = useState(false)
   const [suggestedSubtasks, setSuggestedSubtasks] = useState<string[]>([])
+  const [showCalendar, setShowCalendar] = useState(false)
+  const [markedDates, setMarkedDates] = useState<{[key: string]: {marked: boolean, dotColor: string}}>({})
 
   const priorities = [
     { key: 'alta', label: 'Alta', color: Colors.priorityHigh },
@@ -51,6 +54,7 @@ export default function NewTaskScreen() {
     setLoading(true)
     
     try {
+      console.log('📝 [new-task] Creando tarea...')
       await createTask({
         user_id: user.id,
         title: title.trim(),
@@ -59,10 +63,12 @@ export default function NewTaskScreen() {
         status: 'pendiente',
         due_date: dueDate?.toISOString(),
       })
+      console.log('✅ [new-task] Tarea creada exitosamente')
       
       router.back()
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo crear la tarea')
+    } catch (error: any) {
+      console.error('❌ [new-task] Error:', error)
+      Alert.alert('Error', error?.message || 'No se pudo crear la tarea')
     } finally {
       setLoading(false)
     }
@@ -138,11 +144,7 @@ export default function NewTaskScreen() {
           <Text style={styles.label}>Fecha límite</Text>
           <TouchableOpacity
             style={styles.dateBtn}
-            onPress={() => {
-              const tomorrow = new Date()
-              tomorrow.setDate(tomorrow.getDate() + 1)
-              setDueDate(tomorrow)
-            }}
+            onPress={() => setShowCalendar(true)}
           >
             <Text style={styles.dateBtnText}>
               {dueDate ? dueDate.toLocaleDateString('es-MX') : 'Seleccionar fecha'}
@@ -154,6 +156,50 @@ export default function NewTaskScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        <Modal visible={showCalendar} animationType="slide" transparent>
+          <View style={styles.calendarOverlay}>
+            <View style={styles.calendarContainer}>
+              <View style={styles.calendarHeader}>
+                <Text style={styles.calendarTitle}>Seleccionar fecha</Text>
+                <TouchableOpacity onPress={() => setShowCalendar(false)}>
+                  <Text style={styles.calendarClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <Calendar
+                current={new Date().toISOString()}
+                minDate={new Date().toISOString()}
+                onDayPress={(day: { dateString: string }) => {
+                  setDueDate(new Date(day.dateString))
+                  setMarkedDates({
+                    [day.dateString]: { marked: true, dotColor: Colors.primary }
+                  })
+                  setShowCalendar(false)
+                }}
+                markedDates={markedDates}
+                theme={{
+                  backgroundColor: Colors.white,
+                  calendarBackground: Colors.white,
+                  selectedDayBackgroundColor: Colors.primary,
+                  selectedDayTextColor: Colors.white,
+                  todayTextColor: Colors.primary,
+                  dayTextColor: Colors.textPrimary,
+                  arrowColor: Colors.primary,
+                  monthTextColor: Colors.textPrimary,
+                  textDayFontWeight: '400',
+                  textMonthFontWeight: '600',
+                  textDayHeaderFontWeight: '500',
+                }}
+              />
+              <TouchableOpacity
+                style={styles.calendarCancelBtn}
+                onPress={() => setShowCalendar(false)}
+              >
+                <Text style={styles.calendarCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         <TouchableOpacity
           style={styles.suggestBtn}
@@ -342,5 +388,47 @@ const styles = StyleSheet.create({
   subtaskText: {
     fontSize: 14,
     color: Colors.textPrimary,
+  },
+  calendarOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  calendarContainer: {
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 16,
+    width: '100%',
+    maxWidth: 400,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  calendarTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  calendarClose: {
+    fontSize: 20,
+    color: Colors.textSecondary,
+    padding: 8,
+  },
+  calendarCancelBtn: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  calendarCancelText: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    fontWeight: '600',
   },
 })

@@ -35,35 +35,62 @@ export default function ProfileScreen() {
   }
 
   const handlePickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    })
+    console.log('📝 [profile] Iniciando selección de imagen...')
+    
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      })
 
-    if (result.canceled) return
+      if (result.canceled) {
+        console.log('📝 [profile] Usuario canceló selección')
+        return
+      }
 
-    const uri = result.assets[0].uri
-    const ext = uri.split('.').pop()
-    const path = `${user!.id}/avatar.${ext}`
+      const uri = result.assets[0].uri
+      const ext = uri.split('.').pop() || 'jpg'
+      const path = `${user!.id}/avatar.${ext}`
+      const contentType = result.assets[0].type || 'image/jpeg'
 
-    const response = await fetch(uri)
-    const blob = await response.blob()
+      console.log('📝 [profile] Subiendo a:', path, 'contentType:', contentType)
 
-    const { error } = await supabase.storage.from('avatars').upload(path, blob, { upsert: true })
+      const response = await fetch(uri)
+      const blob = await response.blob()
+      console.log('📝 [profile] Blob creado, tamaño:', blob.size, 'tipo:', blob.type)
 
-    if (error) {
-      Alert.alert('Error', 'No se pudo subir la imagen')
-      return
-    }
+      const { data: uploadData, error } = await supabase.storage
+        .from('avatars')
+        .upload(path, blob, { 
+          upsert: true,
+          contentType: contentType,
+        })
 
-    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
+      if (error) {
+        console.error('❌ [profile] Error de upload:', JSON.stringify(error))
+        Alert.alert('Error', 'No fue posible subir la foto: ' + error.message)
+        return
+      }
 
-    await supabase.from('users').update({ avatar_url: publicUrl }).eq('id', user!.id)
+      console.log('✅ [profile] Upload exitoso:', uploadData)
 
-    if (user) {
-      setUser({ ...user, avatar_url: publicUrl })
+      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(path)
+      const publicUrl = publicUrlData.publicUrl
+
+      console.log('📝 [profile] Public URL:', publicUrl)
+
+      await supabase.from('users').update({ avatar_url: publicUrl }).eq('id', user!.id)
+
+      if (user) {
+        setUser({ ...user, avatar_url: publicUrl })
+      }
+      
+      Alert.alert('Éxito', 'Foto de perfil actualizada')
+    } catch (err: any) {
+      console.error('❌ [profile] Error general:', err)
+      Alert.alert('Error', 'No fue posible subir la foto: ' + err?.message)
     }
   }
 

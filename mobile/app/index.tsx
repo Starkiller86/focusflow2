@@ -16,11 +16,17 @@ export default function Index() {
       return
     }
 
-    // Verificar si tiene mascota
-    supabase.from('pets').select('id').eq('user_id', user.id).single()
-      .then(({ data }) => {
-        if (data) router.replace('/(tabs)')
-        else router.replace('/onboarding/pet-setup')
+    // Verificar si tiene mascota - usar maybeSingle para evitar error cuando no hay resultados
+    supabase.from('pets').select('id').eq('user_id', user.id).maybeSingle()
+      .then(({ data: pet, error }) => {
+        if (error) {
+          console.error('❌ Error verificando mascota:', error.message)
+        }
+        if (pet) {
+          router.replace('/(tabs)')
+        } else {
+          router.replace('/onboarding/pet-setup')
+        }
       })
   }, [user, loading])
 

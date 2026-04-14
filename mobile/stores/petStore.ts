@@ -30,28 +30,69 @@ export const usePetStore = create<PetState>((set, get) => ({
 
   fetch: async (userId: string) => {
     set({ loading: true })
-    const { data } = await supabase
-      .from('pets')
-      .select('*')
-      .eq('user_id', userId)
-      .single()
-    set({ pet: data, loading: false })
+    try {
+      if (!userId) {
+        console.error('❌ [petStore] userId es null!')
+        set({ pet: null, loading: false })
+        return
+      }
+      
+      const { data, error } = await supabase
+        .from('pets')
+        .select('*')
+        .eq('user_id', userId)
+        .single()
+      
+      if (error) {
+        console.error('❌ [petStore] Error fetching:', error)
+        throw new Error(error.message)
+      }
+      
+      console.log('📋 [petStore] Mascota cargada:', data)
+      set({ pet: data, loading: false })
+    } catch (err) {
+      console.error('❌ [petStore] Fetch error:', err)
+      set({ pet: null, loading: false })
+    }
   },
 
   createPet: async (userId: string, name: string, species: string) => {
-    const { data } = await supabase
-      .from('pets')
-      .insert({
-        user_id: userId,
-        name,
-        species,
-        level: 1,
-        xp: 0,
-        happiness: 100,
-      })
-      .select()
-      .single()
-    set({ pet: data })
+    console.log('📝 [petStore] Intentando crear mascota:', { userId, name, species })
+    try {
+      if (!userId) {
+        console.error('❌ [petStore] userId es null o undefined!')
+        throw new Error('No hay usuario autenticado')
+      }
+      
+      const { data, error } = await supabase
+        .from('pets')
+        .insert({
+          user_id: userId,
+          name,
+          species,
+          level: 1,
+          xp: 0,
+          happiness: 100,
+        })
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('❌ [petStore] Error de Supabase:', error)
+        throw new Error(error.message)
+      }
+      
+      if (!data) {
+        console.error('❌ [petStore] No se recibió datos de mascota')
+        throw new Error('No se pudo crear la mascota')
+      }
+      
+      console.log('✅ [petStore] Mascota creada:', data)
+      set({ pet: data })
+    } catch (err) {
+      console.error('❌ [petStore] Error:', err)
+      throw err
+    }
   },
 
   updatePet: async (userId: string, updates: Partial<Pet>) => {
