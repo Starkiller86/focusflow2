@@ -33,7 +33,7 @@ focusflow2/
 ### 1. Clonar el repositorio
 
 ```bash
-git clone <url-del-repositorio>
+git clone https://github.com/Starkiller86/focusflow2.git
 cd focusflow2
 ```
 
