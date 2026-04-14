@@ -24,9 +24,15 @@ export default function LoginScreen() {
   const isBlocked = blockedUntil ? new Date() < blockedUntil : false
 
   const handleLogin = async () => {
-    if (isBlocked || !email.trim() || !password.trim()) return
+    console.log('🔵 [login] handleLogin iniciado')
+    
+    if (isBlocked || !email.trim() || !password.trim()) {
+      console.log('🔵 [login] Saliendo: isBlocked=', isBlocked, 'email vacio=', !email.trim(), 'password vacio=', !password.trim())
+      return
+    }
 
     setLoading(true)
+    console.log('🔵 [login] Llamando signInWithPassword...')
     const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -34,6 +40,7 @@ export default function LoginScreen() {
     setLoading(false)
 
     if (error) {
+      console.error('❌ [login] Error de auth:', error.message)
       const newAttempts = attempts + 1
       setAttempts(newAttempts)
 
@@ -48,31 +55,60 @@ export default function LoginScreen() {
     }
 
     if (!data.user) {
+      console.error('❌ [login] No hay user en data')
       Alert.alert('Error', 'No se pudo iniciar sesión')
       return
     }
 
-    const { data: profile } = await supabase
+    console.log('🔵 [login] Login exitoso, userId:', data.user.id)
+    
+    console.log('🔵 [login] Obteniendo perfil de users...')
+    const { data: profile, error: profileError } = await supabase
       .from('users')
       .select('*')
       .eq('id', data.user.id)
       .single()
+    
+    if (profileError) {
+      console.error('❌ [login] Error obteniendo perfil:', profileError.message)
+      Alert.alert('Error', 'No se pudo obtener el perfil')
+      return
+    }
+    
+    console.log('🔵 [login] Perfil obtenido:', profile)
 
+    console.log('🔵 [login] Guardando en AsyncStorage...')
     await AsyncStorage.multiSet([
       ['userId', data.user.id],
       ['email', email],
       ['role', profile?.role ?? 'paciente'],
     ])
+    console.log('🔵 [login] AsyncStorage guardado')
 
+    console.log('🔵 [login] Llamando setUser(profile)...')
     setUser(profile)
+    console.log('🔵 [login] setUser completado')
 
-    const { data: pet } = await supabase
+    console.log('🔵 [login] Verificando si tiene mascota...')
+    const { data: pet, error: petError } = await supabase
       .from('pets')
       .select('id')
       .eq('user_id', data.user.id)
       .maybeSingle()
-
-    router.replace(pet ? '/(tabs)' : '/onboarding/pet-setup')
+    
+    if (petError) {
+      console.error('❌ [login] Error verificando mascota:', petError.message)
+    }
+    
+    console.log('🔵 [login] Mascota encontrada:', pet)
+    
+    if (pet) {
+      console.log('🔵 [login] Redirigiendo a /(tabs) - TIENE MASCOTA')
+      router.replace('/(tabs)')
+    } else {
+      console.log('🔵 [login] Redirigiendo a /onboarding/pet-setup - NO TIENE MASCOTA')
+      router.replace('/onboarding/pet-setup')
+    }
   }
 
   const startCountdown = (seconds: number) => {

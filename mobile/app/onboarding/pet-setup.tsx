@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, Alert } from 'react-native'
 import { router } from 'expo-router'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useAuthStore } from '../../stores/authStore'
 import { usePetStore } from '../../stores/petStore'
 import { Colors, PetEmojis } from '../../constants/colors'
@@ -19,41 +20,104 @@ const SPECIES_LIST = [
 ]
 
 export default function PetSetupScreen() {
+  console.log('🔵 [pet-setup] Component re-render')
   const { user } = useAuthStore()
   const { createPet } = usePetStore()
   const [selectedSpecies, setSelectedSpecies] = useState<string | null>(null)
   const [petName, setPetName] = useState('')
   const [loading, setLoading] = useState(false)
+  const [userIdResolved, setUserIdResolved] = useState<string | null>(null)
+
+  console.log('🔵 [pet-setup] user del store:', user ? { id: user.id, name: user.name } : 'null')
 
   useEffect(() => {
-    // Verificar si ya tiene mascota y redirigir si es así
-    if (user) {
-      supabase.from('pets').select('id').eq('user_id', user.id).maybeSingle()
-        .then(({ data: pet }) => {
-          if (pet) {
-            router.replace('/(tabs)')
-          }
-        })
+    console.log('🔵 [pet-setup] useEffect iniciado, user:', user ? user.id : 'null')
+    
+    const resolveUserId = async () => {
+      let resolvedId: string | null | undefined = user?.id
+      
+      if (!resolvedId) {
+        console.log('🔵 [pet-setup] user es null, intentando obtener de AsyncStorage...')
+        resolvedId = await AsyncStorage.getItem('userId')
+        console.log('🔵 [pet-setup] userId de AsyncStorage:', resolvedId)
+      }
+      
+      if (!resolvedId) {
+        console.log('🔵 [pet-setup] NO se pudo resolver userId, recargando session...')
+        await useAuthStore.getState().loadSession()
+        resolvedId = useAuthStore.getState().user?.id
+        console.log('🔵 [pet-setup] userId después de loadSession:', resolvedId)
+      }
+      
+      if (resolvedId) {
+        setUserIdResolved(resolvedId)
+        console.log('🔵 [pet-setup] userIdResolved establecido:', resolvedId)
+        
+        console.log('🔵 [pet-setup] Verificando si ya tiene mascota...')
+        const { data: pet, error: petError } = await supabase
+          .from('pets')
+          .select('id')
+          .eq('user_id', resolvedId)
+          .maybeSingle()
+        
+        if (petError) {
+          console.error('❌ [pet-setup] Error verificando mascota:', petError.message)
+        }
+        
+        console.log('🔵 [pet-setup] Mascota encontrada:', pet)
+        
+        if (pet) {
+          console.log('🔵 [pet-setup] YA TIENE MASCOTA, redirigiendo a /(tabs)')
+          router.replace('/(tabs)')
+        } else {
+          console.log('🔵 [pet-setup] NO tiene mascota, mostrando pantalla de adopción')
+        }
+      } else {
+        console.error('❌ [pet-setup] NO se pudo resolver userId, redirigiendo a login')
+        router.replace('/(auth)/login')
+      }
     }
+    
+    resolveUserId()
   }, [user])
 
   const handleAdopt = async () => {
-    if (!user) return
+    console.log('🔵 [pet-setup] handleAdopt iniciado')
+    
+    let resolvedUserId: string | null | undefined = user?.id
+    
+    if (!resolvedUserId) {
+      console.log('🔵 [pet-setup] user es null en handleAdopt, obteniendo de state o AsyncStorage')
+      resolvedUserId = userIdResolved || await AsyncStorage.getItem('userId')
+      console.log('🔵 [pet-setup] userId resuelto:', resolvedUserId)
+    }
+    
+    if (!resolvedUserId) {
+      console.error('❌ [pet-setup] NO HAY USERID - impossible adoptar!')
+      Alert.alert('Error', 'No se encontró el usuario. Por favor cierra sesión y vuelve a entrar.')
+      return
+    }
+    
+    console.log('🔵 [pet-setup] userId disponible:', resolvedUserId)
     
     if (!selectedSpecies) {
+      console.log('🔵 [pet-setup] No hay especie seleccionada')
       Alert.alert('Error', 'Selecciona una mascota')
       return
     }
     
     if (!petName.trim()) {
+      console.log('🔵 [pet-setup] No hay nombre de mascota')
       Alert.alert('Error', 'Ingresa el nombre de tu mascota')
       return
     }
 
+    console.log('🔵 [pet-setup] Datos validados:', { userId: resolvedUserId, name: petName, species: selectedSpecies })
+    
     setLoading(true)
     try {
-      console.log('📝 [pet-setup] Creando mascota:', { userId: user.id, name: petName, species: selectedSpecies })
-      await createPet(user.id, petName.trim(), selectedSpecies)
+      console.log('🔵 [pet-setup] Llamando createPet...')
+      await createPet(resolvedUserId, petName.trim(), selectedSpecies)
       console.log('✅ [pet-setup] Mascota creada exitosamente')
       router.replace('/(tabs)')
     } catch (error: any) {
