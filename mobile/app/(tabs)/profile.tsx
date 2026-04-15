@@ -8,6 +8,18 @@ import { useGamificationStore } from '../../stores/gamificationStore'
 import { Colors } from '../../constants/colors'
 import { supabase } from '../../lib/supabase'
 import * as Haptics from 'expo-haptics'
+import AchievementsModal from '../../components/AchievementsModal'
+import { getUnlockedAchievements, ACHIEVEMENTS } from '../../lib/achievements'
+
+const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+  const binaryString = atob(base64)
+  const len = binaryString.length
+  const bytes = new Uint8Array(len)
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes.buffer
+}
 
 export default function ProfileScreen() {
   const { user, setUser, signOut } = useAuthStore()
@@ -16,13 +28,21 @@ export default function ProfileScreen() {
   const [newName, setNewName] = useState('')
   const [loading, setLoading] = useState(false)
   const [tasksCompleted, setTasksCompleted] = useState(0)
+  const [unlockedCount, setUnlockedCount] = useState(0)
+  const [showAchievements, setShowAchievements] = useState(false)
 
   useEffect(() => {
     if (user) {
       fetchGam(user.id)
       loadStats()
+      loadAchievements()
     }
   }, [user])
+
+  const loadAchievements = async () => {
+    const unlocked = await getUnlockedAchievements()
+    setUnlockedCount(unlocked.length)
+  }
 
   const loadStats = async () => {
     if (!user) return
@@ -38,11 +58,22 @@ export default function ProfileScreen() {
     console.log('📝 [profile] Iniciando selección de imagen...')
     
     try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permiso requerido',
+          'Necesitamos acceso a tu galería para cambiar la foto de perfil. Por favor, concede el permiso en la configuración de tu dispositivo.'
+        )
+        return
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
+        quality: 0.7,
+        base64: true,
       })
 
       if (result.canceled) {
@@ -50,33 +81,30 @@ export default function ProfileScreen() {
         return
       }
 
-      const uri = result.assets[0].uri
-      const ext = uri.split('.').pop() || 'jpg'
-      const path = `${user!.id}/avatar.${ext}`
-      const contentType = result.assets[0].type || 'image/jpeg'
-
-      console.log('📝 [profile] Subiendo a:', path, 'contentType:', contentType)
-
-      const response = await fetch(uri)
-      const blob = await response.blob()
-      console.log('📝 [profile] Blob creado, tamaño:', blob.size, 'tipo:', blob.type)
-
-      const { data: uploadData, error } = await supabase.storage
-        .from('avatars')
-        .upload(path, blob, { 
-          upsert: true,
-          contentType: contentType,
-        })
-
-      if (error) {
-        console.error('❌ [profile] Error de upload:', JSON.stringify(error))
-        Alert.alert('Error', 'No fue posible subir la foto: ' + error.message)
+      if (!result.assets || !result.assets[0]) {
+        Alert.alert('Error', 'No se pudo obtener la imagen seleccionada')
         return
       }
 
-      console.log('✅ [profile] Upload exitoso:', uploadData)
+      const asset = result.assets[0]
+      const fileName = `avatar_${user!.id}_${Date.now()}.jpg`
 
-      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(path)
+      console.log('📝 [profile] Subiendo imagen...')
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, base64ToArrayBuffer(asset.base64!), {
+          contentType: 'image/jpeg',
+          upsert: true,
+        })
+
+      if (uploadError) {
+        console.error('❌ [profile] Error de upload:', uploadError)
+        Alert.alert('Error', 'No fue posible subir la foto. Intenta nuevamente.')
+        return
+      }
+
+      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(fileName)
       const publicUrl = publicUrlData.publicUrl
 
       console.log('📝 [profile] Public URL:', publicUrl)
@@ -87,10 +115,10 @@ export default function ProfileScreen() {
         setUser({ ...user, avatar_url: publicUrl })
       }
       
-      Alert.alert('Éxito', 'Foto de perfil actualizada')
-    } catch (err: any) {
+      Alert.alert('¡Listo!', 'Foto de perfil actualizada correctamente.')
+    } catch (err) {
       console.error('❌ [profile] Error general:', err)
-      Alert.alert('Error', 'No fue posible subir la foto: ' + err?.message)
+      Alert.alert('Error', 'No fue posible subir la foto. Intenta nuevamente.')
     }
   }
 
@@ -98,11 +126,30 @@ export default function ProfileScreen() {
     if (!user || !newName.trim()) return
 
     setLoading(true)
-    await supabase.from('users').update({ name: newName.trim() }).eq('id', user.id)
-    setUser({ ...user, name: newName.trim() })
+    
+    const trimmedName = newName.trim()
+    if (trimmedName.length < 2) {
+      Alert.alert('Error', 'El nombre debe tener al menos 2 caracteres')
+      setLoading(false)
+      return
+    }
+
+    await supabase.from('users').update({ name: trimmedName }).eq('id', user.id)
+    setUser({ ...user, name: trimmedName })
     setLoading(false)
     setEditingName(false)
     setNewName('')
+  }
+
+  const verificarCorreoUnico = async (nuevoEmail: string, usuarioActualId: string): Promise<boolean> => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', nuevoEmail.toLowerCase())
+      .neq('id', usuarioActualId)
+      .maybeSingle()
+
+    return !data && !error
   }
 
   const handleLogout = async () => {
@@ -120,6 +167,7 @@ export default function ProfileScreen() {
   }
 
   return (
+    <>
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Perfil</Text>
 
@@ -192,6 +240,15 @@ export default function ProfileScreen() {
         <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
       </TouchableOpacity>
 
+      <TouchableOpacity style={styles.menuItem} onPress={() => setShowAchievements(true)}>
+        <Text style={styles.menuIcon}>🏆</Text>
+        <Text style={styles.menuText}>Logros</Text>
+        <View style={styles.achievementBadge}>
+          <Text style={styles.achievementBadgeText}>{unlockedCount}/{ACHIEVEMENTS.length}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <Ionicons name="log-out-outline" size={24} color={Colors.error} />
         <Text style={styles.logoutText}>Cerrar Sesión</Text>
@@ -199,6 +256,12 @@ export default function ProfileScreen() {
 
       <Text style={styles.version}>FocusFlow v1.0.0</Text>
     </ScrollView>
+
+    <AchievementsModal
+      visible={showAchievements}
+      onClose={() => setShowAchievements(false)}
+    />
+    </>
   )
 }
 
@@ -353,5 +416,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 24,
     marginBottom: 40,
+  },
+  menuIcon: {
+    fontSize: 24,
+    marginRight: 4,
+  },
+  achievementBadge: {
+    backgroundColor: Colors.primary + '20',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginRight: 8,
+  },
+  achievementBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.primary,
   },
 })

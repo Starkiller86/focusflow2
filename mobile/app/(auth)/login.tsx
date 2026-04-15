@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native'
 import { router } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -8,7 +8,10 @@ import { Colors } from '../../constants/colors'
 import Ionicons from '@expo/vector-icons/Ionicons'
 
 const MAX_ATTEMPTS = 5
-const BLOCK_MINUTES = 15
+const LOCKOUT_DURATION_MS = __DEV__ ? 2 * 60 * 1000 : 15 * 60 * 1000
+
+const STORAGE_KEY_ATTEMPTS = 'login_attempts'
+const STORAGE_KEY_BLOCKED_UNTIL = 'login_blocked_until'
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('')
@@ -20,6 +23,61 @@ export default function LoginScreen() {
   const [countdown, setCountdown] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const setUser = useAuthStore((s) => s.setUser)
+
+  useEffect(() => {
+    loadLockoutData()
+  }, [])
+
+  const loadLockoutData = async () => {
+    try {
+      const storedAttempts = await AsyncStorage.getItem(STORAGE_KEY_ATTEMPTS)
+      const storedBlockedUntil = await AsyncStorage.getItem(STORAGE_KEY_BLOCKED_UNTIL)
+      
+      if (storedBlockedUntil) {
+        const blockedDate = new Date(storedBlockedUntil)
+        if (blockedDate > new Date()) {
+          setBlockedUntil(blockedDate)
+          startCountdown(Math.floor((blockedDate.getTime() - Date.now()) / 1000))
+        } else {
+          await clearLockout()
+        }
+      }
+      
+      if (storedAttempts) {
+        setAttempts(parseInt(storedAttempts) || 0)
+      }
+    } catch (err) {
+      console.error('Error cargando datos de bloqueo:', err)
+    }
+  }
+
+  const clearLockout = async () => {
+    setAttempts(0)
+    setBlockedUntil(null)
+    setCountdown(0)
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    try {
+      await AsyncStorage.multiRemove([STORAGE_KEY_ATTEMPTS, STORAGE_KEY_BLOCKED_UNTIL])
+    } catch (err) {
+      console.error('Error limpiando lockout:', err)
+    }
+  }
+
+  const saveLockoutData = async (newAttempts: number, blockedUntilDate: Date | null) => {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY_ATTEMPTS, newAttempts.toString())
+      if (blockedUntilDate) {
+        await AsyncStorage.setItem(STORAGE_KEY_BLOCKED_UNTIL, blockedUntilDate.toISOString())
+      } else {
+        await AsyncStorage.removeItem(STORAGE_KEY_BLOCKED_UNTIL)
+      }
+    } catch (err) {
+      console.error('Error guardando datos de bloqueo:', err)
+    }
+  }
 
   const isBlocked = blockedUntil ? new Date() < blockedUntil : false
 
@@ -45,10 +103,12 @@ export default function LoginScreen() {
       setAttempts(newAttempts)
 
       if (newAttempts >= MAX_ATTEMPTS) {
-        const until = new Date(Date.now() + BLOCK_MINUTES * 60 * 1000)
+        const until = new Date(Date.now() + LOCKOUT_DURATION_MS)
         setBlockedUntil(until)
-        startCountdown(BLOCK_MINUTES * 60)
+        startCountdown(Math.floor(LOCKOUT_DURATION_MS / 1000))
+        await saveLockoutData(newAttempts, until)
       } else {
+        await saveLockoutData(newAttempts, null)
         Alert.alert('Error', 'Correo o contraseña incorrectos')
       }
       return
@@ -61,6 +121,8 @@ export default function LoginScreen() {
     }
 
     console.log('🔵 [login] Login exitoso, userId:', data.user.id)
+    
+    await clearLockout()
     
     console.log('🔵 [login] Obteniendo perfil de users...')
     const { data: profile, error: profileError } = await supabase

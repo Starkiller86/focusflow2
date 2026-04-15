@@ -129,10 +129,6 @@ export default function MonitorRequestsScreen() {
                 return
               }
 
-              if (cooldownError) {
-                console.error('❌ [monitor-requests] Error al crear cooldown:', cooldownError)
-              }
-
               console.log('✅ [monitor-requests] Solicitud rechazada')
               await fetchRequests()
             } catch (err) {

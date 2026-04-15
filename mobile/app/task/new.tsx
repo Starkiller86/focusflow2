@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal, Platform, Pressable } from 'react-native'
 import { router } from 'expo-router'
 import { useAuthStore } from '../../stores/authStore'
@@ -6,6 +6,7 @@ import { useTaskStore } from '../../stores/taskStore'
 import { Colors } from '../../constants/colors'
 import { suggestSubtasks } from '../../lib/nlpSubtasks'
 import { Calendar } from 'react-native-calendars'
+import TemplateSelector, { Plantilla } from '../../components/TemplateSelector'
 
 export default function NewTaskScreen() {
   const { user } = useAuthStore()
@@ -21,6 +22,8 @@ export default function NewTaskScreen() {
   const [suggestedSubtasks, setSuggestedSubtasks] = useState<string[]>([])
   const [showCalendar, setShowCalendar] = useState(false)
   const [markedDates, setMarkedDates] = useState<{[key: string]: {marked: boolean, dotColor: string}}>({})
+  const [showTemplates, setShowTemplates] = useState(false)
+  const dueDateRef = useRef<Date | null>(null)
 
   const priorities = [
     { key: 'alta', label: 'Alta', color: Colors.priorityHigh },
@@ -55,13 +58,14 @@ export default function NewTaskScreen() {
     
     try {
       console.log('📝 [new-task] Creando tarea...')
+      const finalDueDate = dueDateRef.current || dueDate
       await createTask({
         user_id: user.id,
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
         status: 'pendiente',
-        due_date: dueDate?.toISOString(),
+        due_date: finalDueDate?.toISOString(),
       })
       console.log('✅ [new-task] Tarea creada exitosamente')
       
@@ -72,6 +76,12 @@ export default function NewTaskScreen() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSelectTemplate = (plantilla: Plantilla) => {
+    setTitle(plantilla.nombre)
+    setSuggestedSubtasks(plantilla.subtareas)
+    setShowSubtasks(true)
   }
 
   return (
@@ -170,7 +180,9 @@ export default function NewTaskScreen() {
                 current={new Date().toISOString()}
                 minDate={new Date().toISOString()}
                 onDayPress={(day: { dateString: string }) => {
-                  setDueDate(new Date(day.dateString))
+                  const selectedDate = new Date(day.dateString)
+                  dueDateRef.current = selectedDate
+                  setDueDate(selectedDate)
                   setMarkedDates({
                     [day.dateString]: { marked: true, dotColor: Colors.primary }
                   })
@@ -203,9 +215,16 @@ export default function NewTaskScreen() {
 
         <TouchableOpacity
           style={styles.suggestBtn}
+          onPress={() => setShowTemplates(true)}
+        >
+          <Text style={styles.suggestBtnText}>Usar plantilla</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.suggestBtn, { marginTop: 8 }]}
           onPress={handleSuggestSubtasks}
         >
-          <Text style={styles.suggestBtnText}>Dividir en subtareas</Text>
+          <Text style={styles.suggestBtnText}>Dividir en subtareas (IA)</Text>
         </TouchableOpacity>
 
         <Modal visible={showSubtasks} animationType="slide" transparent>
@@ -228,6 +247,12 @@ export default function NewTaskScreen() {
             </View>
           </View>
         </Modal>
+
+        <TemplateSelector
+          visible={showTemplates}
+          onClose={() => setShowTemplates(false)}
+          onSelect={handleSelectTemplate}
+        />
       </ScrollView>
     </View>
   )

@@ -193,7 +193,10 @@ export default function TasksScreen() {
         style={styles.fab}
         onPress={() => router.push('/task/new')}
       >
-        <Ionicons name="add" size={28} color={Colors.white} />
+        <View style={styles.fabContent}>
+          <Ionicons name="add" size={24} color={Colors.white} />
+          <Text style={styles.fabLabel}>Nueva tarea</Text>
+        </View>
       </TouchableOpacity>
     </View>
   )
@@ -299,12 +302,26 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 24,
     right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
     backgroundColor: Colors.primary,
-    justifyContent: 'center',
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    flexDirection: 'row',
     alignItems: 'center',
-    elevation: 4,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  fabContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  fabLabel: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '600',
   },
 })

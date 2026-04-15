@@ -9,6 +9,14 @@ import * as Haptics from 'expo-haptics'
 import PetDisplay from '../../components/pet/PetDisplay'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
+const MENSAJES_ACARICIAR = [
+  '¡Le encantó!',
+  '¡Qué mimos tan ricos!',
+  '¡Soy muy feliz contigo!',
+  '¡Gracias por el cariño!',
+  '¡Eso se sintió increíble!',
+]
+
 export default function PetScreen() {
   const { user } = useAuthStore()
   const { pet, fetch, updatePet, petInteract } = usePetStore()
@@ -16,6 +24,7 @@ export default function PetScreen() {
   const [newName, setNewName] = useState('')
   const [gamesToday, setGamesToday] = useState(0)
   const [showMiniGame, setShowMiniGame] = useState(false)
+  const [mensajeFlotante, setMensajeFlotante] = useState<string | null>(null)
 
   useEffect(() => {
     if (user) {
@@ -41,6 +50,10 @@ export default function PetScreen() {
     if (!user) return
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
     await petInteract(user.id, 'caress')
+    
+    const mensaje = MENSAJES_ACARICIAR[Math.floor(Math.random() * MENSAJES_ACARICIAR.length)]
+    setMensajeFlotante(mensaje)
+    setTimeout(() => setMensajeFlotante(null), 2000)
   }
 
   const handleFeed = async () => {
@@ -101,6 +114,12 @@ export default function PetScreen() {
 
       <View style={styles.petCard}>
         <PetDisplay pet={pet} size="large" />
+        
+        {mensajeFlotante && (
+          <View style={styles.mensajeFlotante}>
+            <Text style={styles.mensajeFlotanteText}>{mensajeFlotante}</Text>
+          </View>
+        )}
         
         <Text style={styles.petName}>{pet.name}</Text>
         <Text style={styles.petMood}>Nivel {pet.level} {getMood()}</Text>
@@ -315,6 +334,24 @@ const styles = StyleSheet.create({
   },
   modalBtnTextPrimary: {
     color: Colors.white,
+    fontWeight: '600',
+  },
+  mensajeFlotante: {
+    position: 'absolute',
+    top: -20,
+    backgroundColor: Colors.success,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  mensajeFlotanteText: {
+    color: Colors.white,
+    fontSize: 14,
     fontWeight: '600',
   },
 })

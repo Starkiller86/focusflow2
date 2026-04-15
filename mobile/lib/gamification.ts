@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { checkAndUnlockAchievements, Achievement } from './achievements'
 
 export const POINTS = {
   alta: 100,
@@ -35,9 +36,27 @@ export async function completeTask(
     .from('gamification')
     .select('*')
     .eq('user_id', userId)
-    .single()
+    .maybeSingle()
 
-  if (!gam) return
+  if (!gam) {
+    const { error: insertError } = await supabase.from('gamification').insert({
+      user_id: userId,
+      points: pts,
+      level: calcLevel(pts),
+      current_streak: 1,
+      longest_streak: 1,
+      last_task_completed_at: new Date().toISOString(),
+    })
+
+    if (insertError) {
+      console.error('Error creando registro gamification:', insertError)
+    }
+
+    await supabase.from('tasks')
+      .update({ status: 'completada' }).eq('id', taskId)
+
+    return { pts, levelUp: false, newLevel: 1, newAchievements: [] }
+  }
 
   // Calcular streak
   const last = gam.last_task_completed_at ? new Date(gam.last_task_completed_at) : null
@@ -70,6 +89,18 @@ export async function completeTask(
   await supabase.from('tasks')
     .update({ status: 'completada' }).eq('id', taskId)
 
+  const { count: tasksCompleted } = await supabase
+    .from('tasks')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('status', 'completada')
+
+  const newAchievements = await checkAndUnlockAchievements({
+    tasks_completed: tasksCompleted || 0,
+    current_streak: streak,
+    level: newLevel,
+  })
+
   const { data: currentPet } = await supabase
     .from('pets').select('xp').eq('user_id', userId).single()
   
@@ -79,5 +110,5 @@ export async function completeTask(
       .eq('user_id', userId)
   }
 
-  return { pts, levelUp, newLevel }
+  return { pts, levelUp, newLevel, newAchievements }
 }

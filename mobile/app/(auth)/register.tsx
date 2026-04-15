@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView } from 'react-native'
 import { router } from 'expo-router'
 import { supabase } from '../../lib/supabase'
-import { useAuthStore } from '../../stores/authStore'
 import { Colors } from '../../constants/colors'
 import Ionicons from '@expo/vector-icons/Ionicons'
 import PrivacyModal from '../../components/ui/PrivacyModal'
+import PasswordStrengthIndicator, { isPasswordValid } from '../../components/ui/PasswordStrengthIndicator'
 
 interface FormErrors {
   name?: string
@@ -21,7 +21,6 @@ export default function RegisterScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [acceptedTermsChecked, setAcceptedTermsChecked] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
-  const setUser = useAuthStore((s) => s.setUser)
   
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -78,66 +77,84 @@ export default function RegisterScreen() {
       return
     }
 
+    if (!isPasswordValid(password)) {
+      Alert.alert('Contraseña débil', 'La contraseña no cumple con todos los requisitos')
+      return
+    }
+
     console.log('📡 Enviando a Supabase...')
     setLoading(true)
 
-    const { data: authData, error } = await supabase.auth.signUp({
-      email,
-      password,
-    })
+    try {
+      const { data: authData, error } = await supabase.auth.signUp({
+        email,
+        password,
+      })
 
-    console.log('📡 Respuesta Supabase:', authData, error)
+      console.log('📡 Respuesta Supabase:', authData, error)
 
-    if (error) {
-      setLoading(false)
-      if (error.message.includes('already registered') || error.message.includes('User already registered')) {
-        Alert.alert('Error', 'Este correo ya está registrado')
-      } else {
-        Alert.alert('Error', error.message)
+      if (error) {
+        setLoading(false)
+        if (error.message.includes('already registered') || error.message.includes('already exists')) {
+          Alert.alert('Correo en uso', 'Este correo electrónico ya está registrado. Intenta iniciar sesión o usa otro correo.')
+        } else {
+          Alert.alert('Error', error.message)
+        }
+        return
       }
-      return
-    }
 
-    if (!authData?.user) {
+      if (!authData?.user) {
+        setLoading(false)
+        Alert.alert('Error', 'No se pudo crear el usuario')
+        return
+      }
+
+      const userId = authData.user.id
+
+      try {
+        const { error: insertError } = await supabase.from('users').insert({
+          id: userId,
+          name,
+          email,
+          role: 'paciente',
+        })
+
+        if (insertError) {
+          console.error('❌ Error insertando en users:', insertError)
+        }
+      } catch (err) {
+        console.error('❌ Excepción insertando en users:', err)
+      }
+
+      try {
+        const { error: gamError } = await supabase.from('gamification').insert({
+          user_id: userId,
+          points: 0,
+          level: 1,
+          current_streak: 0,
+          longest_streak: 0,
+        })
+
+        if (gamError) {
+          console.error('❌ Error insertando en gamification:', gamError)
+        }
+      } catch (err) {
+        console.error('❌ Excepción insertando en gamification:', err)
+      }
+
+      await supabase.auth.signOut()
       setLoading(false)
-      Alert.alert('Error', 'No se pudo crear el usuario')
-      return
-    }
-
-    const { error: insertError } = await supabase.from('users').insert({
-      id: authData.user.id,
-      name,
-      email,
-      role: 'paciente',
-    })
-
-    if (insertError) {
+      
+      Alert.alert(
+        '¡Cuenta creada!',
+        'Por favor verifica tu correo electrónico para activar tu cuenta.',
+        [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
+      )
+    } catch (err) {
+      console.error('❌ Error general en registro:', err)
       setLoading(false)
-      Alert.alert('Error', 'No se pudo completar el registro')
-      return
+      Alert.alert('Error', 'Ocurrió un error inesperado. Por favor intenta de nuevo.')
     }
-
-    const { error: gamError } = await supabase.from('gamification').insert({
-      user_id: authData.user.id,
-      points: 0,
-      level: 1,
-      current_streak: 0,
-      longest_streak: 0,
-    })
-
-    if (gamError) {
-      setLoading(false)
-      Alert.alert('Error', 'No se pudo inicializar gamificación')
-      return
-    }
-
-    await supabase.auth.signOut()
-    setLoading(false)
-    Alert.alert(
-      '¡Registro exitoso!',
-      'Por favor verifica tu correo electrónico para continuar.',
-      [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
-    )
   }
 
   return (
@@ -192,6 +209,7 @@ export default function RegisterScreen() {
               )}
             </TouchableOpacity>
           </View>
+          <PasswordStrengthIndicator password={password} />
           {errors.password && <Text style={styles.error}>{errors.password}</Text>}
         </View>
 
@@ -239,14 +257,14 @@ export default function RegisterScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
+          style={[styles.button, (loading || !isPasswordValid(password)) && styles.buttonDisabled]}
           onPress={() => {
             console.log('🔘 Botón presionado')
             console.log('📝 name:', name, '| email:', email, '| password:', password, '| confirm:', confirmPassword)
             console.log('📝 acceptedTermsChecked:', acceptedTermsChecked)
             handleRegister()
           }}
-          disabled={loading}
+          disabled={loading || !isPasswordValid(password)}
         >
           <Text style={styles.buttonText}>
             {loading ? 'Creando cuenta...' : 'Registrarse'}
